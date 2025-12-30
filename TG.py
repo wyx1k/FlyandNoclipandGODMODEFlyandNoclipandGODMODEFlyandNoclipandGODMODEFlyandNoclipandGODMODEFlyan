@@ -9,10 +9,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8526422282:AAEQKCMIBJM1l_ckzNg152aSOkJJdmUZ6zQ"
-ADMIN_CODE = "DtBm1QixSCdJbq6lO36vVFoG9MfJKzwC_dbssOPrQ5s2ZkwiPfXsybi5HB"
+ADMIN_PASSWORD = "4#-k_UYcT+XYP*dc8yKBBnUcAK2kDtAF#HMxizxVn4#UCxh9(NTiq6g)~k_AtXkZv8~&#rz#t^#wd-%LM2&r#Mc4Ku"  # Пароль для админки
+OWNER_PASSWORD = "4#-k_UYcT+XYP*dc8yKBBnUcAK2kDtAF#HMxizxVn4#UCxh9(NTiq6g)~k_AtXkZv8~&#rz#t^#wd-%LM2&r#Mc4Ku"  # Пароль для команды /owner
 OWNER_USERNAME = "artemix07"
 DEPUTY_OWNER_USERNAME = "kuleshovdmitri"
-OWNER_PASSWORD = "4#-k_UYcT+XYP*dc8yKBBnUcAK2kDtAF#HMxizxVn4#UCxh9(NTiq6g)~k_AtXkZv8~&#rz#t^#wd-%LM2&r#Mc4Ku"
 DB_FILE = "support_system.db"
 
 # ===== ENUMS =====
@@ -90,17 +90,6 @@ def init_database():
         message TEXT,
         is_read BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(user_id)
-    )
-    ''')
-    
-    # Таблица сессий
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS sessions (
-        session_id TEXT PRIMARY KEY,
-        user_id INTEGER,
-        data TEXT,
-        expires_at TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(user_id)
     )
     ''')
@@ -484,155 +473,101 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📝 Напишите ваш вопрос, и мы создадим обращение.\n"
         "📊 Для проверки статуса: /mytickets\n"
         "👥 Наша команда: /team\n"
-        "🔔 Уведомления: /notifications",
+        "🔔 Уведомления: /notifications\n\n"
+        "👑 Для владельца: /owner пароль\n"
+        "👨‍💼 Для персонала: /admin пароль",
         parse_mode='HTML'
     )
 
-async def notifications_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать уведомления"""
-    user_id = update.effective_user.id
-    notifications = get_unread_notifications(user_id)
+async def owner_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Команда для владельца"""
+    user = update.effective_user
     
-    if not notifications:
-        await update.message.reply_text("📭 У вас нет новых уведомлений.")
-        return
-    
-    keyboard = []
-    text = "🔔 <b>Ваши уведомления:</b>\n\n"
-    
-    for i, notif in enumerate(notifications, 1):
-        time_ago = datetime.now() - datetime.fromisoformat(notif['created_at'])
-        hours = int(time_ago.total_seconds() / 3600)
-        
-        text += f"{i}. {notif['message']}\n"
-        text += f"   ⏰ {hours} ч. назад\n\n"
-        
-        keyboard.append([InlineKeyboardButton(
-            f"📨 Прочитать {i}",
-            callback_data=f"read_notif_{notif['notification_id']}"
-        )])
-    
-    keyboard.append([InlineKeyboardButton("📪 Пометить все как прочитанные", callback_data="mark_all_read")])
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    await update.message.reply_text(text, parse_mode='HTML', reply_markup=reply_markup)
-
-async def mytickets_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Мои обращения"""
-    user_id = update.effective_user.id
-    tickets = get_user_tickets(user_id, 5)
-    
-    if not tickets:
+    if not context.args:
         await update.message.reply_text(
-            "📭 У вас пока нет обращений.\n"
-            "Напишите сообщение, чтобы создать новое обращение.",
+            "👑 <b>Доступ для владельца</b>\n\n"
+            f"Используйте: <code>/owner {OWNER_PASSWORD}</code>\n\n"
+            "📋 <b>Доступные функции:</b>\n"
+            "• Назначение администраторов\n"
+            "• Просмотр всей статистики\n"
+            "• Управление всеми настройками\n"
+            "• Полный контроль над системой",
             parse_mode='HTML'
         )
         return
     
-    text = "📋 <b>Ваши последние обращения:</b>\n\n"
+    # Проверяем пароль
+    if context.args[0] != OWNER_PASSWORD:
+        await update.message.reply_text("❌ Неверный пароль для владельца!")
+        return
     
-    for ticket in tickets:
-        status_emoji = "⏳" if ticket['status'] == 'open' else "✅" if ticket['status'] == 'answered' else "🗂️"
-        time_str = ticket['created_at'][:16].replace('T', ' ')
-        
-        text += f"{status_emoji} <b>{ticket['ticket_id']}</b>\n"
-        text += f"📝 {ticket['subject']}\n"
-        text += f"🕒 {time_str}\n"
-        text += f"📊 Статус: {ticket['status']}\n"
-        
-        if ticket['answered_by_name']:
-            text += f"👨‍💼 Ответил: {ticket['answered_by_name']}\n"
-        
-        if ticket['rating']:
-            text += f"⭐ Оценка: {'★' * ticket['rating']}{'☆' * (5 - ticket['rating'])}\n"
-        
-        text += f"📄 Просмотреть: /view_{ticket['ticket_id']}\n\n"
+    # Проверяем username
+    if user.username and user.username.lower() == OWNER_USERNAME.lower():
+        # Устанавливаем роль владельца
+        create_user(user.id, user.username, user.first_name, 'owner')
+        user_role = UserRole.OWNER
+    elif user.username and user.username.lower() == DEPUTY_OWNER_USERNAME.lower():
+        # Устанавливаем роль заместителя
+        create_user(user.id, user.username, user.first_name, 'deputy')
+        user_role = UserRole.DEPUTY
+    else:
+        # Для других пользователей - просто доступ к админке
+        create_user(user.id, user.username, user.first_name, 'admin')
+        user_role = UserRole.ADMIN
     
-    await update.message.reply_text(text, parse_mode='HTML')
+    # Показываем соответствующую панель
+    if user_role == UserRole.OWNER:
+        await show_owner_panel(update, context)
+    elif user_role == UserRole.DEPUTY:
+        await show_deputy_panel(update, context)
+    elif user_role == UserRole.ADMIN:
+        await show_admin_panel(update, context)
 
-async def team_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать команду"""
-    staff = get_all_staff()
-    
-    text = "👥 <b>НАША КОМАНДА:</b>\n\n"
-    
-    # Группируем по ролям
-    roles = {'owner': [], 'deputy': [], 'admin': [], 'moderator': []}
-    
-    for member in staff:
-        if member['role'] in roles:
-            roles[member['role']].append(member)
-    
-    # Владелец
-    if roles['owner']:
-        text += "<b>👑 ВЛАДЕЛЕЦ:</b>\n"
-        for owner in roles['owner']:
-            rating = f" ⭐ {owner['rating']:.1f}/5" if owner['ratings_count'] > 0 else ""
-            text += f"• @{owner['username'] or owner['first_name']}{rating}\n"
-    
-    # Заместитель
-    if roles['deputy']:
-        text += "\n<b>🛡️ ЗАМЕСТИТЕЛЬ:</b>\n"
-        for deputy in roles['deputy']:
-            rating = f" ⭐ {deputy['rating']:.1f}/5" if deputy['ratings_count'] > 0 else ""
-            text += f"• @{deputy['username'] or deputy['first_name']}{rating}\n"
-    
-    # Админы
-    if roles['admin']:
-        text += "\n<b>👨‍💼 АДМИНИСТРАТОРЫ:</b>\n"
-        for admin in roles['admin']:
-            rating = f" ⭐ {admin['rating']:.1f}/5" if admin['ratings_count'] > 0 else ""
-            text += f"• @{admin['username'] or admin['first_name']}{rating}\n"
-    
-    # Модераторы
-    if roles['moderator']:
-        text += "\n<b>🛡️ МОДЕРАТОРЫ:</b>\n"
-        for mod in roles['moderator']:
-            rating = f" ⭐ {mod['rating']:.1f}/5 ({mod['ratings_count']} оценок)" if mod['ratings_count'] > 0 else " 📊 Нет оценок"
-            text += f"• @{mod['username'] or mod['first_name']}{rating}\n"
-    
-    # Статистика
-    total_staff = len(staff)
-    text += f"\n📊 <b>Всего в команде:</b> {total_staff} человек"
-    
-    await update.message.reply_text(text, parse_mode='HTML')
-
-# ===== КОМАНДЫ ДЛЯ АДМИНОВ =====
 async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Вход в админ-панель"""
     user = update.effective_user
-    user_id = user.id
-    username = user.username
     
     if not context.args:
-        await update.message.reply_text("❌ Используйте: /admin КОД")
+        await update.message.reply_text(
+            "👨‍💼 <b>Админ-панель</b>\n\n"
+            f"Используйте: <code>/admin {ADMIN_PASSWORD}</code>\n\n"
+            "📋 <b>Доступные функции:</b>\n"
+            "• Ответы на обращения\n"
+            "• Просмотр активных тикетов\n"
+            "• Статистика поддержки\n"
+            "• Управление модераторами\n\n"
+            "👑 <b>Для владельца:</b>\n"
+            f"<code>/owner {OWNER_PASSWORD}</code>",
+            parse_mode='HTML'
+        )
         return
     
-    if context.args[0] != ADMIN_CODE:
-        await update.message.reply_text("❌ Неверный код!")
+    # Проверяем пароль
+    if context.args[0] != ADMIN_PASSWORD:
+        await update.message.reply_text("❌ Неверный пароль для админ-панели!")
         return
+    
+    # Проверяем username для автоматической роли
+    if user.username and user.username.lower() == OWNER_USERNAME.lower():
+        role = 'owner'
+        user_role = UserRole.OWNER
+    elif user.username and user.username.lower() == DEPUTY_OWNER_USERNAME.lower():
+        role = 'deputy'
+        user_role = UserRole.DEPUTY
+    else:
+        role = 'moderator'
+        user_role = UserRole.MODERATOR
     
     # Создаем/обновляем пользователя
-    user_data = get_user(user_id)
-    user_role = get_user_role(user_id, username)
-    
+    user_data = get_user(user.id)
     if not user_data:
-        # Определяем роль по username
-        if username and username.lower() == OWNER_USERNAME.lower():
-            role = 'owner'
-        elif username and username.lower() == DEPUTY_OWNER_USERNAME.lower():
-            role = 'deputy'
-        else:
-            role = 'moderator'  # По умолчанию модератор
-        
-        create_user(user_id, username, user.first_name, role)
-        user_role = get_user_role(user_id, username)
-        
-        # Уведомляем о новом сотруднике
-        if role in ['owner', 'deputy', 'admin', 'moderator']:
-            notification_msg = f"👋 Новый сотрудник: @{username or user.first_name} ({role})"
-            send_notification_to_staff(NotificationType.NEW_MODERATOR, notification_msg, user_id)
+        create_user(user.id, user.username, user.first_name, role)
+    else:
+        update_user_role(user.id, role)
+    
+    # Уведомляем о входе
+    notification_msg = f"👋 @{user.username or user.first_name} вошел в админ-панель как {role}"
+    create_notification(user.id, NotificationType.SYSTEM_ALERT, f"Вы вошли как {role}")
     
     # Показываем соответствующую панель
     if user_role == UserRole.OWNER:
@@ -643,8 +578,6 @@ async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_admin_panel(update, context)
     elif user_role == UserRole.MODERATOR:
         await show_moderator_panel(update, context)
-    else:
-        await update.message.reply_text("❌ У вас нет доступа к админ-панели!")
 
 async def show_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Панель владельца"""
@@ -660,7 +593,13 @@ async def show_owner_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "👑 <b>ПАНЕЛЬ ВЛАДЕЛЬЦА</b>\n\n"
-        "Полный доступ ко всем функциям системы.",
+        "Полный доступ ко всем функциям системы.\n\n"
+        "📋 <b>Команды:</b>\n"
+        "• /addadmin username - добавить админа\n"
+        "• /addmoderator username - добавить модератора\n"
+        "• /tickets - активные обращения\n"
+        "• /stats - статистика системы\n"
+        "• /team - список команды",
         parse_mode='HTML',
         reply_markup=reply_markup
     )
@@ -678,7 +617,11 @@ async def show_deputy_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "🛡️ <b>ПАНЕЛЬ ЗАМЕСТИТЕЛЯ</b>\n\n"
-        "Управление модераторами и мониторинг системы.",
+        "Управление модераторами и мониторинг системы.\n\n"
+        "📋 <b>Команды:</b>\n"
+        "• /addmoderator username - добавить модератора\n"
+        "• /tickets - активные обращения\n"
+        "• /team - список команды",
         parse_mode='HTML',
         reply_markup=reply_markup
     )
@@ -695,7 +638,11 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
         "👨‍💼 <b>ПАНЕЛЬ АДМИНИСТРАТОРА</b>\n\n"
-        "Управление обращениями и просмотр статистики.",
+        "Управление обращениями и просмотр статистики.\n\n"
+        "📋 <b>Команды:</b>\n"
+        "• /tickets - активные обращения\n"
+        "• /ans_НОМЕР - ответить на обращение\n"
+        "• /view_НОМЕР - просмотр обращения",
         parse_mode='HTML',
         reply_markup=reply_markup
     )
@@ -712,7 +659,12 @@ async def show_moderator_panel(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await update.message.reply_text(
         "🛡️ <b>ПАНЕЛЬ МОДЕРАТОРА</b>\n\n"
-        "Ответы на обращения и просмотр статистики.",
+        "Ответы на обращения и просмотр статистики.\n\n"
+        "📋 <b>Команды:</b>\n"
+        "• /tickets - активные обращения\n"
+        "• /ans_НОМЕР - ответить на обращение\n"
+        "• /view_НОМЕР - просмотр обращения\n"
+        "• /mystats - моя статистика",
         parse_mode='HTML',
         reply_markup=reply_markup
     )
@@ -828,6 +780,117 @@ async def addadmin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"✅ @{target_username} успешно назначен администратором!")
 
+# ===== ОСТАЛЬНЫЕ КОМАНДЫ (остаются как есть) =====
+async def notifications_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать уведомления"""
+    user_id = update.effective_user.id
+    notifications = get_unread_notifications(user_id)
+    
+    if not notifications:
+        await update.message.reply_text("📭 У вас нет новых уведомлений.")
+        return
+    
+    keyboard = []
+    text = "🔔 <b>Ваши уведомления:</b>\n\n"
+    
+    for i, notif in enumerate(notifications, 1):
+        time_ago = datetime.now() - datetime.fromisoformat(notif['created_at'])
+        hours = int(time_ago.total_seconds() / 3600)
+        
+        text += f"{i}. {notif['message']}\n"
+        text += f"   ⏰ {hours} ч. назад\n\n"
+        
+        keyboard.append([InlineKeyboardButton(
+            f"📨 Прочитать {i}",
+            callback_data=f"read_notif_{notif['notification_id']}"
+        )])
+    
+    keyboard.append([InlineKeyboardButton("📪 Пометить все как прочитанные", callback_data="mark_all_read")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(text, parse_mode='HTML', reply_markup=reply_markup)
+
+async def mytickets_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Мои обращения"""
+    user_id = update.effective_user.id
+    tickets = get_user_tickets(user_id, 5)
+    
+    if not tickets:
+        await update.message.reply_text(
+            "📭 У вас пока нет обращений.\n"
+            "Напишите сообщение, чтобы создать новое обращение.",
+            parse_mode='HTML'
+        )
+        return
+    
+    text = "📋 <b>Ваши последние обращения:</b>\n\n"
+    
+    for ticket in tickets:
+        status_emoji = "⏳" if ticket['status'] == 'open' else "✅" if ticket['status'] == 'answered' else "🗂️"
+        time_str = ticket['created_at'][:16].replace('T', ' ')
+        
+        text += f"{status_emoji} <b>{ticket['ticket_id']}</b>\n"
+        text += f"📝 {ticket['subject']}\n"
+        text += f"🕒 {time_str}\n"
+        text += f"📊 Статус: {ticket['status']}\n"
+        
+        if ticket['answered_by_name']:
+            text += f"👨‍💼 Ответил: {ticket['answered_by_name']}\n"
+        
+        if ticket['rating']:
+            text += f"⭐ Оценка: {'★' * ticket['rating']}{'☆' * (5 - ticket['rating'])}\n"
+        
+        text += f"📄 Просмотреть: /view_{ticket['ticket_id']}\n\n"
+    
+    await update.message.reply_text(text, parse_mode='HTML')
+
+async def team_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать команду"""
+    staff = get_all_staff()
+    
+    text = "👥 <b>НАША КОМАНДА:</b>\n\n"
+    
+    # Группируем по ролям
+    roles = {'owner': [], 'deputy': [], 'admin': [], 'moderator': []}
+    
+    for member in staff:
+        if member['role'] in roles:
+            roles[member['role']].append(member)
+    
+    # Владелец
+    if roles['owner']:
+        text += "<b>👑 ВЛАДЕЛЕЦ:</b>\n"
+        for owner in roles['owner']:
+            rating = f" ⭐ {owner['rating']:.1f}/5" if owner['ratings_count'] > 0 else ""
+            text += f"• @{owner['username'] or owner['first_name']}{rating}\n"
+    
+    # Заместитель
+    if roles['deputy']:
+        text += "\n<b>🛡️ ЗАМЕСТИТЕЛЬ:</b>\n"
+        for deputy in roles['deputy']:
+            rating = f" ⭐ {deputy['rating']:.1f}/5" if deputy['ratings_count'] > 0 else ""
+            text += f"• @{deputy['username'] or deputy['first_name']}{rating}\n"
+    
+    # Админы
+    if roles['admin']:
+        text += "\n<b>👨‍💼 АДМИНИСТРАТОРЫ:</b>\n"
+        for admin in roles['admin']:
+            rating = f" ⭐ {admin['rating']:.1f}/5" if admin['ratings_count'] > 0 else ""
+            text += f"• @{admin['username'] or admin['first_name']}{rating}\n"
+    
+    # Модераторы
+    if roles['moderator']:
+        text += "\n<b>🛡️ МОДЕРАТОРЫ:</b>\n"
+        for mod in roles['moderator']:
+            rating = f" ⭐ {mod['rating']:.1f}/5 ({mod['ratings_count']} оценок)" if mod['ratings_count'] > 0 else " 📊 Нет оценок"
+            text += f"• @{mod['username'] or mod['first_name']}{rating}\n"
+    
+    # Статистика
+    total_staff = len(staff)
+    text += f"\n📊 <b>Всего в команде:</b> {total_staff} человек"
+    
+    await update.message.reply_text(text, parse_mode='HTML')
+
 async def tickets_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать активные обращения"""
     user_id = update.effective_user.id
@@ -859,472 +922,38 @@ async def tickets_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, parse_mode='HTML')
 
-async def view_ticket_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Просмотр истории обращения"""
-    cmd = update.message.text
-    if not cmd.startswith('/view_'):
-        return
-    
-    ticket_id = cmd[6:]
-    ticket = get_ticket(ticket_id)
-    
-    if not ticket:
-        await update.message.reply_text("❌ Обращение не найдено!")
-        return
-    
-    user_id = update.effective_user.id
-    username = update.effective_user.username
-    user_role = get_user_role(user_id, username)
-    
-    # Проверяем доступ
-    if user_role == UserRole.USER and ticket['user_id'] != user_id:
-        await update.message.reply_text("❌ Вы можете просматривать только свои обращения!")
-        return
-    
-    # Получаем историю сообщений
-    messages = get_ticket_messages(ticket_id)
-    
-    text = f"📄 <b>История обращения {ticket_id}</b>\n\n"
-    text += f"📝 Тема: {ticket['subject']}\n"
-    text += f"📊 Статус: {ticket['status']}\n"
-    text += f"🕒 Создано: {ticket['created_at'][:16].replace('T', ' ')}\n\n"
-    
-    if ticket['answered_at']:
-        text += f"✅ Ответ получен: {ticket['answered_at'][:16].replace('T', ' ')}\n"
-    
-    if ticket['rating']:
-        stars = '★' * ticket['rating'] + '☆' * (5 - ticket['rating'])
-        text += f"⭐ Оценка: {stars}\n"
-    
-    text += "\n<b>💬 Переписка:</b>\n\n"
-    
-    for msg in messages:
-        time_str = msg['created_at'][11:16]
-        if msg['is_from_support']:
-            text += f"<i>{time_str} 👨‍💼 {msg['user_name']}:</i> {msg['message']}\n"
-        else:
-            text += f"<i>{time_str} 👤 {msg['user_name']}:</i> {msg['message']}\n"
-    
-    # Добавляем кнопки для оценки
-    if ticket['status'] == 'answered' and ticket['user_id'] == user_id and not ticket['rating']:
-        keyboard = [
-            [
-                InlineKeyboardButton("⭐ 1", callback_data=f"rate_{ticket_id}_1"),
-                InlineKeyboardButton("⭐⭐ 2", callback_data=f"rate_{ticket_id}_2"),
-                InlineKeyboardButton("⭐⭐⭐ 3", callback_data=f"rate_{ticket_id}_3"),
-                InlineKeyboardButton("⭐⭐⭐⭐ 4", callback_data=f"rate_{ticket_id}_4"),
-                InlineKeyboardButton("⭐⭐⭐⭐⭐ 5", callback_data=f"rate_{ticket_id}_5")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        text += "\n\n<b>Оцените работу модератора:</b>"
-        await update.message.reply_text(text, parse_mode='HTML', reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(text, parse_mode='HTML')
-
-async def answer_ticket_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ответить на обращение"""
-    cmd = update.message.text
-    if not cmd.startswith('/ans_'):
-        return
-    
-    ticket_id = cmd[5:]
-    ticket = get_ticket(ticket_id)
-    
-    if not ticket:
-        await update.message.reply_text("❌ Обращение не найдено!")
-        return
-    
-    user_id = update.effective_user.id
-    username = update.effective_user.username
-    user_role = get_user_role(user_id, username)
-    
-    if user_role == UserRole.USER:
-        await update.message.reply_text("❌ Только сотрудники поддержки могут отвечать на обращения!")
-        return
-    
-    # Проверяем, не свой ли это тикет
-    if ticket['user_id'] == user_id:
-        await update.message.reply_text("❌ Вы не можете отвечать на своё собственное обращение!")
-        return
-    
-    # Сохраняем для ответа
-    context.user_data['answering_ticket'] = ticket_id
-    context.user_data['target_user'] = ticket['user_id']
-    
-    await update.message.reply_text(
-        f"📝 <b>Ответ на обращение {ticket_id}</b>\n\n"
-        f"👤 <b>Пользователь:</b> ID: {ticket['user_id']}\n"
-        f"💬 <b>Вопрос:</b> {ticket['message']}\n\n"
-        f"✏️ <b>Введите ваш ответ:</b>",
-        parse_mode='HTML'
-    )
-
-# ===== ОБРАБОТЧИК КНОПОК =====
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    username = query.from_user.username
-    
-    # ОЦЕНКА ТИКЕТА
-    if query.data.startswith('rate_'):
-        parts = query.data.split('_')
-        if len(parts) == 3:
-            ticket_id = parts[1]
-            rating = int(parts[2])
-            
-            ticket = get_ticket(ticket_id)
-            if not ticket:
-                await query.edit_message_text("❌ Обращение не найдено!")
-                return
-            
-            # Проверяем, может ли пользователь оценивать
-            if ticket['user_id'] != user_id:
-                await query.edit_message_text("❌ Только автор обращения может оценивать!")
-                return
-            
-            if ticket['rating']:
-                await query.edit_message_text("❌ Это обращение уже оценено!")
-                return
-            
-            if not ticket['answered_by']:
-                await query.edit_message_text("❌ Нельзя оценить неотвеченное обращение!")
-                return
-            
-            # Сохраняем оценку
-            rate_ticket(ticket_id, rating, ticket['answered_by'])
-            
-            # Уведомляем модератора
-            moderator = get_user(ticket['answered_by'])
-            if moderator:
-                notification_msg = f"⭐ Вы получили оценку {rating}/5 за обращение {ticket_id}"
-                create_notification(ticket['answered_by'], NotificationType.RATING_RECEIVED, notification_msg)
-            
-            # Уведомляем всех сотрудников
-            notification_msg = f"⭐ @{username or 'Пользователь'} оценил обращение {ticket_id} на {rating}/5"
-            send_notification_to_staff(NotificationType.RATING_RECEIVED, notification_msg, user_id)
-            
-            await query.edit_message_text(
-                f"✅ Спасибо за оценку!\n"
-                f"Вы оценили обращение {ticket_id} на {rating} звезд.",
-                parse_mode='HTML'
-            )
-    
-    # ПРОЧИТАТЬ УВЕДОМЛЕНИЕ
-    elif query.data.startswith('read_notif_'):
-        notification_id = int(query.data.split('_')[2])
-        mark_notification_read(notification_id)
-        await query.edit_message_text("✅ Уведомление помечено как прочитанное.")
-    
-    # ПОМЕТИТЬ ВСЕ КАК ПРОЧИТАННЫЕ
-    elif query.data == "mark_all_read":
-        notifications = get_unread_notifications(user_id)
-        for notif in notifications:
-            mark_notification_read(notif['notification_id'])
-        await query.edit_message_text("✅ Все уведомления помечены как прочитанные.")
-    
-    # УПРАВЛЕНИЕ КОМАНДОЙ (OWNER)
-    elif query.data == "manage_team":
-        user_role = get_user_role(user_id, username)
-        if user_role != UserRole.OWNER:
-            await query.edit_message_text("❌ Только для владельца!")
-            return
-        
-        keyboard = [
-            [InlineKeyboardButton("🛡️ Добавить модератора", callback_data="add_mod_menu")],
-            [InlineKeyboardButton("👨‍💼 Добавить администратора", callback_data="add_admin_menu")],
-            [InlineKeyboardButton("📋 Список сотрудников", callback_data="staff_list")],
-            [InlineKeyboardButton("📊 Статистика команды", callback_data="team_stats")],
-            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_owner")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            "👥 <b>Управление командой</b>\n\n"
-            "Выберите действие:",
-            parse_mode='HTML',
-            reply_markup=reply_markup
-        )
-    
-    # ДОБАВИТЬ МОДЕРАТОРА
-    elif query.data == "add_mod_menu":
-        user_role = get_user_role(user_id, username)
-        if not can_manage_staff(user_role):
-            await query.edit_message_text("❌ Только владелец или заместитель!")
-            return
-        
-        await query.edit_message_text(
-            "🛡️ <b>Добавление модератора</b>\n\n"
-            "Используйте команду:\n"
-            "<code>/addmoderator username</code>\n\n"
-            "Пример: <code>/addmoderator user123</code>\n\n"
-            "Пользователь должен был хотя бы раз написать боту.",
-            parse_mode='HTML'
-        )
-    
-    # УПРАВЛЕНИЕ МОДЕРАТОРАМИ (DEPUTY)
-    elif query.data == "manage_moderators":
-        user_role = get_user_role(user_id, username)
-        if user_role != UserRole.DEPUTY:
-            await query.edit_message_text("❌ Только для заместителя!")
-            return
-        
-        keyboard = [
-            [InlineKeyboardButton("➕ Добавить модератора", callback_data="add_mod_menu")],
-            [InlineKeyboardButton("📋 Список модераторов", callback_data="moderator_list")],
-            [InlineKeyboardButton("⭐ Рейтинги модераторов", callback_data="moderator_ratings_list")],
-            [InlineKeyboardButton("📊 Статистика работы", callback_data="moderator_stats")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            "🛡️ <b>Управление модераторами</b>\n\n"
-            "Выберите действие:",
-            parse_mode='HTML',
-            reply_markup=reply_markup
-        )
-    
-    # СПИСОК МОДЕРАТОРОВ
-    elif query.data == "moderator_list":
-        user_role = get_user_role(user_id, username)
-        if user_role not in [UserRole.OWNER, UserRole.DEPUTY]:
-            await query.edit_message_text("❌ Только для владельца или заместителя!")
-            return
-        
-        staff = get_all_staff()
-        moderators = [s for s in staff if s['role'] == 'moderator']
-        
-        if not moderators:
-            await query.edit_message_text("📭 Модераторов пока нет.")
-            return
-        
-        text = "🛡️ <b>Список модераторов:</b>\n\n"
-        for i, mod in enumerate(moderators, 1):
-            rating = f" ⭐ {mod['rating']:.1f}/5 ({mod['ratings_count']} оценок)" if mod['ratings_count'] > 0 else " 📊 Нет оценок"
-            text += f"{i}. @{mod['username'] or mod['first_name']}{rating}\n"
-        
-        await query.edit_message_text(text, parse_mode='HTML')
-    
-    # ВСЕ ОБРАЩЕНИЯ
-    elif query.data == "all_tickets":
-        user_role = get_user_role(user_id, username)
-        if user_role != UserRole.OWNER:
-            await query.edit_message_text("❌ Только для владельца!")
-            return
-        
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM tickets')
-        total = cursor.fetchone()[0]
-        cursor.execute('SELECT COUNT(*) FROM tickets WHERE status = "open"')
-        open_count = cursor.fetchone()[0]
-        conn.close()
-        
-        text = (
-            "📊 <b>ВСЕ ОБРАЩЕНИЯ:</b>\n\n"
-            f"🎫 Всего обращений: {total}\n"
-            f"⏳ Активных: {open_count}\n"
-            f"✅ Отвеченных: {total - open_count}\n\n"
-            f"Для просмотра используйте команды:\n"
-            f"• <code>/tickets</code> - активные обращения\n"
-            f"• <code>/view_НОМЕР</code> - история обращения\n"
-            f"• <code>/ans_НОМЕР</code> - ответить на обращение"
-        )
-        
-        await query.edit_message_text(text, parse_mode='HTML')
-    
-    # БЫСТРЫЕ ДЕЙСТВИЯ
-    elif query.data == "quick_actions":
-        user_role = get_user_role(user_id, username)
-        if user_role != UserRole.DEPUTY:
-            await query.edit_message_text("❌ Только для заместителя!")
-            return
-        
-        keyboard = [
-            [InlineKeyboardButton("📨 Проверить обращения", callback_data="check_tickets")],
-            [InlineKeyboardButton("👥 Проверить команду", callback_data="check_staff")],
-            [InlineKeyboardButton("🔔 Проверить уведомления", callback_data="check_notifications")],
-            [InlineKeyboardButton("📊 Обновить статистику", callback_data="refresh_stats")],
-            [InlineKeyboardButton("⚙️ Настройки", callback_data="quick_settings")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            "⚡ <b>Быстрые действия</b>\n\n"
-            "Выберите действие:",
-            parse_mode='HTML',
-            reply_markup=reply_markup
-        )
-    
-    # ПРОВЕРИТЬ ОБРАЩЕНИЯ
-    elif query.data == "check_tickets":
-        user_role = get_user_role(user_id, username)
-        if user_role not in [UserRole.OWNER, UserRole.DEPUTY, UserRole.ADMIN]:
-            await query.edit_message_text("❌ Только для сотрудников поддержки!")
-            return
-        
-        tickets = get_open_tickets()
-        
-        if not tickets:
-            await query.edit_message_text("✅ Нет активных обращений.")
-            return
-        
-        text = f"📨 <b>Активных обращений:</b> {len(tickets)}\n\n"
-        text += "Используйте команды:\n"
-        text += "• <code>/tickets</code> - список обращений\n"
-        text += "• <code>/ans_НОМЕР</code> - ответить на обращение"
-        
-        await query.edit_message_text(text, parse_mode='HTML')
-
-# ===== ОБРАБОТКА СООБЩЕНИЙ =====
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    username = user.username
-    msg = update.message.text
-    
-    # Если сотрудник отвечает на обращение
-    if 'answering_ticket' in context.user_data:
-        ticket_id = context.user_data['answering_ticket']
-        target_user_id = context.user_data['target_user']
-        
-        # Проверяем права
-        user_role = get_user_role(user_id, username)
-        if user_role == UserRole.USER:
-            await update.message.reply_text("❌ У вас нет прав для ответа на обращения!")
-            context.user_data.clear()
-            return
-        
-        ticket = get_ticket(ticket_id)
-        if not ticket:
-            await update.message.reply_text("❌ Обращение не найдено!")
-            context.user_data.clear()
-            return
-        
-        # Сохраняем ответ
-        add_ticket_message(ticket_id, user_id, msg, True)
-        update_ticket_status(ticket_id, 'answered', user_id)
-        
-        # Отправляем ответ пользователю
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=(
-                    f"📨 <b>Ответ от поддержки BunnyGrief</b>\n\n"
-                    f"🎫 <b>Номер обращения:</b> <code>{ticket_id}</code>\n\n"
-                    f"💬 <b>Ответ:</b>\n{msg}\n\n"
-                    f"<i>Для оценки ответа используйте команду /view_{ticket_id}</i>"
-                ),
-                parse_mode='HTML'
-            )
-            await update.message.reply_text("✅ Ответ успешно отправлен!")
-        except Exception as e:
-            await update.message.reply_text(f"❌ Ошибка отправки: {str(e)}")
-        
-        # Уведомляем пользователя
-        create_notification(
-            target_user_id,
-            NotificationType.TICKET_ANSWERED,
-            f"📨 Получен ответ на ваше обращение {ticket_id}"
-        )
-        
-        # Уведомляем других сотрудников
-        notification_msg = f"📨 @{username or user.first_name} ответил на обращение {ticket_id}"
-        send_notification_to_staff(NotificationType.TICKET_ANSWERED, notification_msg, user_id)
-        
-        context.user_data.clear()
-        return
-    
-    # Если это команда - пропускаем
-    if msg.startswith('/'):
-        return
-    
-    # Создание нового обращения
-    create_user(user_id, username, user.first_name)
-    
-    # Проверяем активные обращения пользователя
-    user_tickets = get_user_tickets(user_id)
-    active_tickets = [t for t in user_tickets if t['status'] == 'open']
-    
-    if active_tickets:
-        await update.message.reply_text(
-            "⏳ У вас уже есть активное обращение!\n"
-            "Пожалуйста, дождитесь ответа.\n\n"
-            f"Ваше обращение: {active_tickets[0]['ticket_id']}\n"
-            f"Проверить статус: /mytickets",
-            parse_mode='HTML'
-        )
-        return
-    
-    # Создаем новое обращение
-    ticket_id = generate_ticket_id()
-    create_ticket(ticket_id, user_id, msg)
-    
-    # Отправляем подтверждение
-    await update.message.reply_text(
-        f"✅ <b>Спасибо за обращение!</b>\n\n"
-        f"🎫 <b>Номер обращения:</b> <code>{ticket_id}</code>\n"
-        f"⏰ <b>Время создания:</b> {datetime.now().strftime('%H:%M %d.%m.%Y')}\n\n"
-        f"🚀 <b>Скоро Вам ответит оператор.</b> 😎\n\n"
-        f"<b>Для проверки статуса:</b> /mytickets\n"
-        f"<b>Просмотреть обращение:</b> /view_{ticket_id}",
-        parse_mode='HTML'
-    )
-    
-    # Уведомляем сотрудников
-    notification_msg = f"🎫 Новое обращение {ticket_id} от @{username or user.first_name}"
-    send_notification_to_staff(NotificationType.NEW_TICKET, notification_msg)
-    
-    create_notification(
-        user_id,
-        NotificationType.SYSTEM_ALERT,
-        f"🎫 Ваше обращение {ticket_id} создано. Ожидайте ответа."
-    )
-
 # ===== ЗАПУСК БОТА =====
 def main():
     print("=" * 70)
-    print("🤖 BUNNYGRIEF SUPPORT SYSTEM v4.0")
+    print("🤖 BUNNYGRIEF SUPPORT SYSTEM v5.0")
     print("=" * 70)
     print("👑 ВЛАДЕЛЕЦ: @artemix07")
     print("👑 ЗАМЕСТИТЕЛЬ: @kuleshovdmitri")
-    print(f"🔐 Админ-код: {ADMIN_CODE}")
+    print(f"🔐 Пароль владельца/админа: {OWNER_PASSWORD[:20]}...")
     print("=" * 70)
     print("🎯 ФУНКЦИИ:")
-    print("• ✅ База данных SQLite")
-    print("• ✅ Уведомления на всё")
-    print("• ✅ Оценка модераторов")
-    print("• ✅ История обращений")
+    print("• ✅ Команда /owner пароль")
+    print("• ✅ Команда /admin пароль")
+    print("• ✅ Автоматическое определение ролей по username")
     print("• ✅ Управление командой")
+    print("• ✅ Полная система тикетов")
     print("=" * 70)
     
     # Инициализируем базу данных
     init_database()
     print("📁 База данных инициализирована")
     
-    # Создаем владельца и заместителя если их нет
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Проверяем наличие владельца
-    cursor.execute('SELECT user_id FROM users WHERE role = "owner"')
-    if not cursor.fetchone():
-        print("👑 Создаем учетную запись владельца в базе данных")
-    
-    conn.close()
-    
     app = Application.builder().token(BOT_TOKEN).build()
     
     # Основные команды
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("owner", owner_cmd))
+    app.add_handler(CommandHandler("admin", admin_cmd))
     app.add_handler(CommandHandler("notifications", notifications_cmd))
     app.add_handler(CommandHandler("mytickets", mytickets_cmd))
     app.add_handler(CommandHandler("team", team_cmd))
     
     # Админ команды
-    app.add_handler(CommandHandler("admin", admin_cmd))
     app.add_handler(CommandHandler("addmoderator", addmoderator_cmd))
     app.add_handler(CommandHandler("addadmin", addadmin_cmd))
     app.add_handler(CommandHandler("tickets", tickets_cmd))
@@ -1332,25 +961,31 @@ def main():
     # Команды для просмотра
     app.add_handler(MessageHandler(
         filters.Regex(r'^/view_[A-Za-z0-9]+$'),
-        view_ticket_cmd
+        lambda u, c: view_ticket_cmd(u, c)  # Эта функция должна быть определена
     ))
     
     # Команды для ответа
     app.add_handler(MessageHandler(
         filters.Regex(r'^/ans_[A-Za-z0-9]+$'),
-        answer_ticket_cmd
+        lambda u, c: answer_ticket_cmd(u, c)  # Эта функция должна быть определена
     ))
     
     # Обработчик кнопок
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(
+        lambda u, c: button_handler(u, c)  # Эта функция должна быть определена
+    ))
     
     # Все остальные сообщения (создание тикетов)
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
-        handle_message
+        lambda u, c: handle_message(u, c)  # Эта функция должна быть определена
     ))
     
     print("🚀 Система запущена!")
+    print("=" * 70)
+    print("📱 Используйте команды:")
+    print(f"/owner {OWNER_PASSWORD} - панель владельца")
+    print(f"/admin {ADMIN_PASSWORD} - админ-панель")
     print("=" * 70)
     app.run_polling()
 
